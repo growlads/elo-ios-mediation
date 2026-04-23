@@ -22,13 +22,32 @@ final class AdMobNativeAdRenderer: AdRenderer, @unchecked Sendable {
     func makeView() -> AnyObject {
         let nativeAdView = GADNativeAdView()
         nativeAdView.translatesAutoresizingMaskIntoConstraints = false
+        nativeAdView.clipsToBounds = true
+
+        let contentView = UIView()
+        contentView.translatesAutoresizingMaskIntoConstraints = false
+        nativeAdView.addSubview(contentView)
+
+        let mediaContainerView = UIView()
+        mediaContainerView.translatesAutoresizingMaskIntoConstraints = false
+        mediaContainerView.layer.cornerRadius = 6
+        mediaContainerView.clipsToBounds = true
+        contentView.addSubview(mediaContainerView)
+
+        let mediaView = GADMediaView()
+        mediaView.translatesAutoresizingMaskIntoConstraints = false
+        mediaView.contentMode = .scaleAspectFill
+        mediaView.isHidden = nativeAd.mediaContent.hasVideoContent == false && nativeAd.images?.first == nil
+        mediaContainerView.isHidden = mediaView.isHidden
+        mediaContainerView.addSubview(mediaView)
+        nativeAdView.mediaView = mediaView
 
         let headlineLabel = UILabel()
         headlineLabel.translatesAutoresizingMaskIntoConstraints = false
         headlineLabel.font = .systemFont(ofSize: 15, weight: .bold)
         headlineLabel.numberOfLines = 0
         headlineLabel.text = nativeAd.headline
-        nativeAdView.addSubview(headlineLabel)
+        contentView.addSubview(headlineLabel)
         nativeAdView.headlineView = headlineLabel
 
         let bodyLabel = UILabel()
@@ -38,37 +57,38 @@ final class AdMobNativeAdRenderer: AdRenderer, @unchecked Sendable {
         bodyLabel.textColor = .secondaryLabel
         bodyLabel.text = nativeAd.body
         bodyLabel.isHidden = nativeAd.body == nil
-        nativeAdView.addSubview(bodyLabel)
+        contentView.addSubview(bodyLabel)
         nativeAdView.bodyView = bodyLabel
 
-        let imageView = UIImageView()
-        imageView.translatesAutoresizingMaskIntoConstraints = false
-        imageView.contentMode = .scaleAspectFill
-        imageView.clipsToBounds = true
-        imageView.layer.cornerRadius = 6
-        imageView.image = nativeAd.images?.first?.image
-        imageView.isHidden = nativeAd.images?.first?.image == nil
-        nativeAdView.addSubview(imageView)
-        nativeAdView.imageView = imageView
-
         NSLayoutConstraint.activate([
-            imageView.topAnchor.constraint(equalTo: nativeAdView.topAnchor, constant: 12),
-            imageView.leadingAnchor.constraint(equalTo: nativeAdView.leadingAnchor, constant: 12),
-            imageView.widthAnchor.constraint(equalToConstant: 72),
-            imageView.heightAnchor.constraint(equalToConstant: 72),
+            contentView.topAnchor.constraint(equalTo: nativeAdView.topAnchor, constant: 12),
+            contentView.leadingAnchor.constraint(equalTo: nativeAdView.leadingAnchor, constant: 12),
+            contentView.trailingAnchor.constraint(equalTo: nativeAdView.trailingAnchor, constant: -12),
+            contentView.bottomAnchor.constraint(equalTo: nativeAdView.bottomAnchor, constant: -12),
 
-            headlineLabel.topAnchor.constraint(equalTo: nativeAdView.topAnchor, constant: 12),
+            mediaContainerView.topAnchor.constraint(equalTo: contentView.topAnchor),
+            mediaContainerView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
+            mediaContainerView.widthAnchor.constraint(equalToConstant: 72),
+            mediaContainerView.heightAnchor.constraint(equalToConstant: 72),
+
+            mediaView.topAnchor.constraint(equalTo: mediaContainerView.topAnchor),
+            mediaView.leadingAnchor.constraint(equalTo: mediaContainerView.leadingAnchor),
+            mediaView.trailingAnchor.constraint(equalTo: mediaContainerView.trailingAnchor),
+            mediaView.bottomAnchor.constraint(equalTo: mediaContainerView.bottomAnchor),
+
+            headlineLabel.topAnchor.constraint(equalTo: contentView.topAnchor),
             headlineLabel.leadingAnchor.constraint(
-                equalTo: imageView.image == nil ? nativeAdView.leadingAnchor : imageView.trailingAnchor,
+                equalTo: mediaView.isHidden ? contentView.leadingAnchor : mediaContainerView.trailingAnchor,
                 constant: 12
             ),
-            headlineLabel.trailingAnchor.constraint(equalTo: nativeAdView.trailingAnchor, constant: -12),
+            headlineLabel.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
 
             bodyLabel.topAnchor.constraint(equalTo: headlineLabel.bottomAnchor, constant: 4),
             bodyLabel.leadingAnchor.constraint(equalTo: headlineLabel.leadingAnchor),
             bodyLabel.trailingAnchor.constraint(equalTo: headlineLabel.trailingAnchor),
-            bodyLabel.bottomAnchor.constraint(lessThanOrEqualTo: nativeAdView.bottomAnchor, constant: -12),
+            bodyLabel.bottomAnchor.constraint(lessThanOrEqualTo: contentView.bottomAnchor),
 
+            contentView.bottomAnchor.constraint(greaterThanOrEqualTo: mediaContainerView.bottomAnchor),
             nativeAdView.heightAnchor.constraint(greaterThanOrEqualToConstant: 96),
         ])
 
