@@ -61,7 +61,7 @@ public final class AdMobNetworkAdapter: NSObject, AdNetworkAdapter, @unchecked S
         let nativeAd = try await loadNativeAd(request: request)
         guard let nativeAd else { return nil }
 
-        guard let ad = Self.makeCreative(from: nativeAd) else { return nil }
+        guard let ad = await Self.makeCreative(from: nativeAd) else { return nil }
         return AdBid(networkId: networkId, eCpm: assumedECpm, ad: ad)
     }
 
@@ -85,7 +85,9 @@ public final class AdMobNetworkAdapter: NSObject, AdNetworkAdapter, @unchecked S
 
     // MARK: - Decision C — AdMob creative mapping
 
-    /// Map a loaded `GADNativeAd` to Growl's `GrowlAd` shape.
+    /// Map a loaded `GADNativeAd` to Growl's `GrowlAd` shape and attach an
+    /// ``AdRenderer`` that registers the ad with `GADNativeAdView` at display
+    /// time so AdMob can count impressions and clicks.
     ///
     /// **This is where you decide how AdMob creatives present inside
     /// `GrowlAdView`.** AdMob exposes: `headline`, `body`, `images[0]`
@@ -108,16 +110,35 @@ public final class AdMobNetworkAdapter: NSObject, AdNetworkAdapter, @unchecked S
     ///      a malformed creative and the bid drops from the auction.
     ///
     /// Return `nil` to reject the creative (the bid becomes a no-fill).
+    @MainActor
     static func makeCreative(from nativeAd: GADNativeAd) -> GrowlAd? {
-        AdMobCreativeMapper.makeCreative(
+        var bridgedAd: GrowlAd?
+        let delegateBridge = AdMobNativeAdDelegateBridge(
+            onImpression: {
+                guard let bridgedAd else { return }
+                Growl.trackImpression(bridgedAd)
+            },
+            onClick: {
+                guard let bridgedAd else { return }
+                Growl.trackClick(bridgedAd)
+            }
+        )
+        let renderer = AdMobNativeAdRenderer(
+            nativeAd: nativeAd,
+            delegateBridge: delegateBridge
+        )
+        let ad = AdMobCreativeMapper.makeCreative(
             from: AdMobNativeAssets(
                 identifier: ObjectIdentifier(nativeAd).debugDescription,
                 headline: nativeAd.headline,
                 body: nativeAd.body,
                 imageURL: nativeAd.images?.first?.imageURL?.absoluteString
             ),
-            tracker: AdMobNativeTracker(nativeAd: nativeAd)
+            tracker: AdMobNativeTracker(nativeAd: nativeAd),
+            renderer: renderer
         )
+        bridgedAd = ad
+        return ad
     }
 
     private func startGoogleMobileAds() async throws {

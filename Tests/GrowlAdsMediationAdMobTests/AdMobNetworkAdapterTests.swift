@@ -2,12 +2,22 @@ import XCTest
 import GrowlCore
 @testable import GrowlAdsMediationAdMob
 
+@MainActor
 final class AdMobNetworkAdapterTests: XCTestCase {
     private struct NoopTracker: AdTracker {
         func trackRender() async {}
         func trackImpression() async {}
         func trackClick() async {}
     }
+
+    #if canImport(UIKit)
+    @MainActor
+    private struct StubRenderer: AdRenderer {
+        func makeView() -> AnyObject {
+            UIView()
+        }
+    }
+    #endif
 
     func testMakeCreativeMapsHeadlineBodyAndImage() {
         let assets = AdMobNativeAssets(
@@ -17,12 +27,27 @@ final class AdMobNetworkAdapterTests: XCTestCase {
             imageURL: "https://example.com/hero.png"
         )
 
-        let ad = AdMobCreativeMapper.makeCreative(from: assets, tracker: NoopTracker())
+        #if canImport(UIKit)
+        let ad = AdMobCreativeMapper.makeCreative(
+            from: assets,
+            tracker: NoopTracker(),
+            renderer: StubRenderer()
+        )
+        #else
+        let ad = AdMobCreativeMapper.makeCreative(
+            from: assets,
+            tracker: NoopTracker(),
+            renderer: nil
+        )
+        #endif
 
         XCTAssertEqual(ad?.id, "native-1")
         XCTAssertEqual(ad?.title, "Sponsored hotel deal")
         XCTAssertEqual(ad?.description, "Book tonight and save")
         XCTAssertEqual(ad?.imageUrl, "https://example.com/hero.png")
+        #if canImport(UIKit)
+        XCTAssertNotNil(ad?.renderer)
+        #endif
     }
 
     func testMakeCreativeRejectsMissingHeadline() {
@@ -33,7 +58,19 @@ final class AdMobNetworkAdapterTests: XCTestCase {
             imageURL: nil
         )
 
-        let ad = AdMobCreativeMapper.makeCreative(from: assets, tracker: NoopTracker())
+        #if canImport(UIKit)
+        let ad = AdMobCreativeMapper.makeCreative(
+            from: assets,
+            tracker: NoopTracker(),
+            renderer: StubRenderer()
+        )
+        #else
+        let ad = AdMobCreativeMapper.makeCreative(
+            from: assets,
+            tracker: NoopTracker(),
+            renderer: nil
+        )
+        #endif
 
         XCTAssertNil(ad)
     }

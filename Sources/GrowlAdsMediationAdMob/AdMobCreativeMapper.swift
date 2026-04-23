@@ -9,7 +9,11 @@ struct AdMobNativeAssets: Sendable, Equatable {
 }
 
 enum AdMobCreativeMapper {
-    static func makeCreative(from assets: AdMobNativeAssets, tracker: some AdTracker) -> GrowlAd? {
+    static func makeCreative(
+        from assets: AdMobNativeAssets,
+        tracker: some AdTracker,
+        renderer: AdRenderer?
+    ) -> GrowlAd? {
         guard let headline = assets.headline, !headline.isEmpty else {
             return nil
         }
@@ -19,7 +23,8 @@ enum AdMobCreativeMapper {
             title: headline,
             description: assets.body,
             imageUrl: assets.imageURL,
-            tracker: tracker
+            tracker: tracker,
+            renderer: renderer
         )
     }
 }

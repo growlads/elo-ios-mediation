@@ -8,7 +8,26 @@
 - iOS only
 - Built on top of `GoogleMobileAds`
 
-Banner, interstitial, rewarded, and rewarded interstitial support are not part of this adapter today because Growl's current mediation UI surface is native-only.
+Banner, interstitial, rewarded, and rewarded interstitial support are not part
+of this adapter today because Growl's current mediation UI surface is
+native-only.
+
+## Rendering Model
+
+AdMob creatives are rendered by the adapter itself using `GADNativeAdView`,
+not by Growl's generic SwiftUI ad card. At bid time the adapter attaches an
+`AdRenderer` to the returned `GrowlAd`; `GrowlAdView` detects that renderer and
+embeds the AdMob-owned `UIView` directly.
+
+This is required because AdMob only counts impressions and clicks for native
+ads displayed inside a registered `GADNativeAdView`.
+
+Implications for host apps:
+
+- Do not wrap `GrowlAdView` in your own tap handler when targeting AdMob.
+- Ensure `GADApplicationIdentifier` is present before startup.
+- Expect the adapter-owned native layout to control AdMob presentation and
+  tracking behavior.
 
 ## Installation
 
