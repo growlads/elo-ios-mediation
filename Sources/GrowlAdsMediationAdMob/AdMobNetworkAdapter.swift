@@ -43,6 +43,13 @@ import GoogleMobileAds
 public final class AdMobNetworkAdapter: NSObject, AdNetworkAdapter, @unchecked Sendable {
     public let networkId = "admob"
 
+    public let requiredInfoPlistKeys: [String] = ["GADApplicationIdentifier"]
+
+    /// Google's primary SKAdNetwork identifier. The full ~50-ID AdMob
+    /// mediation list is out of scope for v1; adapter authors who need
+    /// exhaustive SKAN coverage can subclass and override.
+    public let requiredSKAdNetworkIds: [String] = ["cstr6suwn9.skadnetwork"]
+
     private let adUnitId: String
     private let assumedECpm: Double
     private let rootViewControllerProvider: @MainActor @Sendable () -> UIViewController?
