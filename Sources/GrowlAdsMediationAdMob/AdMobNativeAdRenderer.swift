@@ -5,27 +5,24 @@ import GrowlCore
 import UIKit
 @preconcurrency import GoogleMobileAds
 
-/// Builds a `GADNativeAdView` that follows AdMob's standard vertical layout
-/// for native ads: sponsored badge at top, full-width `GADMediaView` sized
-/// to the creative's aspect ratio (with a minimum 120pt height per AdMob
-/// policy), full-width headline and body below.
+/// Builds a compact horizontal `GADNativeAdView` that visually matches
+/// ``GrowlAdView``'s Growl-sourced card: "📢 Sponsored" badge on top, a
+/// 120×120 `GADMediaView` on the leading edge, headline + body stacked to
+/// its trailing side, `GADAdChoicesView` in the top-right corner.
 ///
-/// Why vertical and full-width, not the 72×72 horizontal card that matches
-/// ``GrowlAdView``'s SwiftUI layout:
+/// Why 120×120 square for MediaView:
 ///
-/// - `GADMediaView` is Google-owned. When forced into a 72×72 frame, its
-///   internal content drawing can exceed that frame if the creative's
-///   aspect ratio differs, which AdMob's validator flags as "assets outside
-///   native ad view."
-/// - AdMob policy requires MediaView ≥ 120×120 so video creatives have
-///   room to render. Our 72×72 layout always triggered
-///   "MediaView is too small for video," regardless of the current creative.
-///
-/// Publishers who want Growl's tight 72×72 card for AdMob would need the
-/// overlay-on-SwiftUI approach (render SwiftUI, position invisible UIKit
-/// asset views on top, register those). That pattern is fragile and out of
-/// scope for v1. For now, AdMob creatives use this AdMob-standard layout
-/// and ``GrowlAdView`` is the billable surface for the AdMob adapter.
+/// - AdMob's validator warns "MediaView is too small for video" whenever
+///   the registered MediaView is smaller than 120×120, independent of the
+///   current creative's content type — the check is preemptive to cover
+///   future video fills on the same ad unit. 120pt is the floor.
+/// - A fixed square (rather than aspect-ratio-driven) keeps the card height
+///   stable across creatives — SwiftUI feeds sent through a `LazyVStack`
+///   don't jitter when the next auction delivers an ad with a different
+///   aspect ratio.
+/// - Text column width on iPhone-SE-class devices (343pt container) is
+///   ~187pt after paddings, which wraps a typical body into 2–3 lines.
+///   Larger phones (390pt+) fit most bodies in 2 lines.
 ///
 /// Not yet responsive to SwiftUI's `\.growlAdStyle` environment — defaults
 /// match Growl's card colors so styled and unstyled apps look close.
@@ -73,39 +70,37 @@ final class AdMobNativeAdRenderer: AdRenderer, @unchecked Sendable {
         nativeAdView.addSubview(mediaView)
         nativeAdView.mediaView = mediaView
 
-        let headlineLabel = UILabel()
+        // Place registered asset views as direct subviews of `GADNativeAdView`.
+        // AdMob's native-ad validator flags assets that aren't direct children
+        // as "Advertiser assets outside native ad view," even when the frames
+        // are mathematically inside the native ad view's bounds. Google's own
+        // sample native layouts always hang assets directly off the root
+        // native ad view.
+        //
+        // Use `WrappingLabel` so each label re-computes its intrinsic content
+        // size once the frame width is known — a free-standing `UILabel` with
+        // `numberOfLines = 0` reports its intrinsic size against the full
+        // unwrapped text and never rewraps inside auto-layout.
+        let headlineLabel = WrappingLabel()
         headlineLabel.translatesAutoresizingMaskIntoConstraints = false
-        headlineLabel.font = .systemFont(ofSize: 16, weight: .bold)
+        headlineLabel.font = .systemFont(ofSize: 16, weight: .semibold)
         headlineLabel.numberOfLines = 0
+        headlineLabel.lineBreakMode = .byWordWrapping
         headlineLabel.textColor = .label
         headlineLabel.text = nativeAd.headline
         nativeAdView.addSubview(headlineLabel)
         nativeAdView.headlineView = headlineLabel
 
-        let bodyLabel = UILabel()
+        let bodyLabel = WrappingLabel()
         bodyLabel.translatesAutoresizingMaskIntoConstraints = false
         bodyLabel.font = .systemFont(ofSize: 13)
         bodyLabel.numberOfLines = 0
+        bodyLabel.lineBreakMode = .byWordWrapping
         bodyLabel.textColor = .secondaryLabel
         bodyLabel.text = nativeAd.body
         bodyLabel.isHidden = (nativeAd.body?.isEmpty ?? true)
         nativeAdView.addSubview(bodyLabel)
         nativeAdView.bodyView = bodyLabel
-
-        // MediaView sizing: respect the creative's aspect ratio, but enforce
-        // AdMob's 120pt minimum so the "MediaView is too small for video"
-        // warning is cleared. A `lessThanOrEqualTo` ceiling keeps very-tall
-        // creatives from dominating the feed.
-        let aspectRatio = nativeAd.mediaContent.aspectRatio > 0
-            ? nativeAd.mediaContent.aspectRatio
-            : 1
-        let aspectHeightConstraint = mediaView.heightAnchor.constraint(
-            equalTo: mediaView.widthAnchor,
-            multiplier: 1 / CGFloat(aspectRatio)
-        )
-        // Allow auto-layout to relax the aspect ratio if it conflicts with
-        // the min/max height bounds.
-        aspectHeightConstraint.priority = .defaultHigh
 
         NSLayoutConstraint.activate([
             sponsoredLabel.topAnchor.constraint(equalTo: nativeAdView.topAnchor, constant: 12),
@@ -114,28 +109,28 @@ final class AdMobNativeAdRenderer: AdRenderer, @unchecked Sendable {
 
             adChoicesView.topAnchor.constraint(equalTo: nativeAdView.topAnchor, constant: 8),
             adChoicesView.trailingAnchor.constraint(equalTo: nativeAdView.trailingAnchor, constant: -8),
-            adChoicesView.widthAnchor.constraint(lessThanOrEqualToConstant: 15),
-            adChoicesView.heightAnchor.constraint(lessThanOrEqualToConstant: 15),
+            adChoicesView.widthAnchor.constraint(equalToConstant: 15),
+            adChoicesView.heightAnchor.constraint(equalToConstant: 15),
 
             mediaView.topAnchor.constraint(equalTo: sponsoredLabel.bottomAnchor, constant: 8),
             mediaView.leadingAnchor.constraint(equalTo: nativeAdView.leadingAnchor, constant: 12),
-            mediaView.trailingAnchor.constraint(equalTo: nativeAdView.trailingAnchor, constant: -12),
-            aspectHeightConstraint,
-            mediaView.heightAnchor.constraint(greaterThanOrEqualToConstant: 120),
-            mediaView.heightAnchor.constraint(lessThanOrEqualToConstant: 240),
+            mediaView.widthAnchor.constraint(equalToConstant: 120),
+            mediaView.heightAnchor.constraint(equalToConstant: 120),
+            mediaView.bottomAnchor.constraint(lessThanOrEqualTo: nativeAdView.bottomAnchor, constant: -12),
 
-            headlineLabel.topAnchor.constraint(equalTo: mediaView.bottomAnchor, constant: 10),
-            headlineLabel.leadingAnchor.constraint(equalTo: nativeAdView.leadingAnchor, constant: 12),
+            headlineLabel.topAnchor.constraint(equalTo: mediaView.topAnchor),
+            headlineLabel.leadingAnchor.constraint(equalTo: mediaView.trailingAnchor, constant: 12),
             headlineLabel.trailingAnchor.constraint(equalTo: nativeAdView.trailingAnchor, constant: -12),
 
-            bodyLabel.topAnchor.constraint(equalTo: headlineLabel.bottomAnchor, constant: 6),
-            bodyLabel.leadingAnchor.constraint(equalTo: nativeAdView.leadingAnchor, constant: 12),
-            bodyLabel.trailingAnchor.constraint(equalTo: nativeAdView.trailingAnchor, constant: -12),
+            bodyLabel.topAnchor.constraint(equalTo: headlineLabel.bottomAnchor, constant: 4),
+            bodyLabel.leadingAnchor.constraint(equalTo: headlineLabel.leadingAnchor),
+            bodyLabel.trailingAnchor.constraint(equalTo: headlineLabel.trailingAnchor),
             bodyLabel.bottomAnchor.constraint(lessThanOrEqualTo: nativeAdView.bottomAnchor, constant: -12),
         ])
 
-        headlineLabel.setContentCompressionResistancePriority(.required, for: .vertical)
-        bodyLabel.setContentCompressionResistancePriority(.required, for: .vertical)
+        // Yield to the trailing constraint before expanding text width.
+        headlineLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        bodyLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
 
         // Wire tracking last: delegate before `nativeAd` assignment so the
         // impression callback that fires on view-attachment isn't missed.
@@ -145,6 +140,26 @@ final class AdMobNativeAdRenderer: AdRenderer, @unchecked Sendable {
         nativeAdView.nativeAd = nativeAd
 
         return nativeAdView
+    }
+}
+
+/// UILabel that keeps `preferredMaxLayoutWidth` in sync with its own frame.
+///
+/// A plain UILabel with `numberOfLines = 0` reports its intrinsic size
+/// against the unwrapped text (single line) because `preferredMaxLayoutWidth`
+/// defaults to `0`. Auto-layout then squeezes the label, but the label's
+/// internal drawing doesn't re-wrap — the rendered text spills past the
+/// frame, and AdMob's native-ad validator flags the result as
+/// "Advertiser assets outside native ad view." Syncing the property in
+/// `layoutSubviews` forces the second layout pass to compute wrap height
+/// against the actual frame width.
+private final class WrappingLabel: UILabel {
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        if preferredMaxLayoutWidth != bounds.width {
+            preferredMaxLayoutWidth = bounds.width
+            setNeedsUpdateConstraints()
+        }
     }
 }
 #endif

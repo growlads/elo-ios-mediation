@@ -14,20 +14,36 @@ native-only.
 
 ## Rendering Model
 
-AdMob creatives are rendered by the adapter itself using `GADNativeAdView`,
-not by Growl's generic SwiftUI ad card. At bid time the adapter attaches an
-`AdRenderer` to the returned `GrowlAd`; `GrowlAdView` detects that renderer and
-embeds the AdMob-owned `UIView` directly.
+AdMob only counts impressions and clicks for native ads displayed inside a
+registered `GADNativeAdView`. The adapter therefore always attaches an
+`AdRenderer` that embeds `GADNativeAdView` (AdMob-owned MediaView + headline
++ body) inside `GrowlAdView`, so every successful AdMob fill is billable.
 
-This is required because AdMob only counts impressions and clicks for native
-ads displayed inside a registered `GADNativeAdView`.
+`GrowlBadgeAdView` and `GrowlChatAdView` draw Growl's SwiftUI card layout
+and do not honor the renderer. They are safe surfaces for Growl-sourced
+creatives but **must not** be used for AdMob bids — showing the same
+`GADNativeAd` in non-registered views breaks tracking and violates AdMob
+policy. Branch on `ad.requiresCustomRendering` in host code to choose
+which surfaces to present:
+
+```swift
+GrowlAdView(ad: ad)
+
+if !ad.requiresCustomRendering {
+    GrowlBadgeAdView(ad: ad)
+    GrowlChatAdView(ad: ad)
+}
+```
 
 Implications for host apps:
 
-- Do not wrap `GrowlAdView` in your own tap handler when targeting AdMob.
+- Do not wrap `GrowlAdView` in your own tap handler when the ad requires
+  custom rendering; AdMob owns click attribution.
 - Ensure `GADApplicationIdentifier` is present before startup.
-- Expect the adapter-owned native layout to control AdMob presentation and
-  tracking behavior.
+- Expect the AdMob-owned native layout (taller than Growl's compact card) to
+  control presentation for AdMob fills.
+- Display a single `GrowlAdView` per auction result; a `GADNativeAd` can
+  only be registered against one `GADNativeAdView` at a time.
 
 ## Installation
 
@@ -76,6 +92,15 @@ Growl.configure(
 )
 ```
 
+### About `assumedECpm`
+
+`GADNativeAd` does not expose a bid price, so the adapter reports a static
+`assumedECpm` on every successful fill. This is a **v1 placeholder, not a real
+bid** — the mediator cannot price-compare AdMob against other networks until
+AdMob exposes a programmatic eCPM. Treat the value as a coarse ordering hint
+(typically your historical AdMob eCPM for this ad unit) and revisit once the
+adapter reads a real price.
+
 ## Test IDs
 
 Google's public iOS test IDs are useful for local verification:
@@ -92,7 +117,22 @@ The adapter forwards the per-request `AdConsent` snapshot into the Google Mobile
 - COPPA via `tagForChildDirectedTreatment`
 - TFUA via `tagForUnderAgeOfConsent`
 
-Signals such as TCF strings, GPP strings, and UMP-managed consent flows still need to be handled by the host app / CMP where Google expects them.
+These two flags are everything the Google Mobile Ads SDK accepts directly on
+`GADRequestConfiguration`. The remaining consent signals are **not** carried
+through this adapter and are the host app's responsibility:
+
+- **TCF v2 (IAB)** — `tcfString` / `addtlConsent` must be written to
+  `NSUserDefaults` under the standard IAB keys (`IABTCF_*`) by your CMP.
+  Google's SDK reads them from there directly.
+- **GPP (Global Privacy Platform)** — `gppString` / `gppSid` must likewise be
+  written to `NSUserDefaults` under `IABGPP_*` keys by your CMP.
+- **Google UMP** (`GoogleUserMessagingPlatform`) — if you use Google's own CMP,
+  present its form before calling `Growl.configure(with:)` so `gppString` and
+  `tcfString` are in place before the first auction.
+
+If any of those signals are required for a given region, the `AdMobNetworkAdapter`
+will still bid — but the resulting request may be treated as non-personalized
+by AdMob. Surface this through your app's CMP, not through `AdConsent`.
 
 ## Version Compatibility
 

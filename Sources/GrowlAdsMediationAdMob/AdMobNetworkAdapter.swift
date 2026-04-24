@@ -24,10 +24,22 @@ import GoogleMobileAds
 /// in v1. Banner / interstitial / rewarded can be added later once
 /// `GrowlAdView` gains format siblings.
 ///
+/// Rendering & billing: AdMob requires creatives to be displayed inside a
+/// `GADNativeAdView` for impressions and clicks to count. The adapter always
+/// attaches an ``AdMobNativeAdRenderer`` to the returned ``GrowlAd`` so
+/// ``GrowlAdView`` embeds an AdMob-owned layout and the ad is billable.
+/// `GrowlBadgeAdView` and `GrowlChatAdView` are Growl-styled variants that
+/// ignore the renderer — they are not safe surfaces for AdMob creatives.
+/// Branch on ``GrowlAd/requiresCustomRendering`` to choose which surfaces to
+/// show for a given bid.
+///
 /// eCPM: `GADNativeAd` does not expose a bid price directly; the adapter
-/// reports the publisher-set ``assumedECpm`` fallback. When AdMob's bidding
-/// response-info gains a programmatic eCPM accessor we can read, this
-/// adapter will prefer that value over the fallback.
+/// reports the publisher-set ``assumedECpm`` as a fallback. **Because this is
+/// a static value, Growl's mediator cannot price-compare AdMob's real fill
+/// against other networks in v1 — treat `assumedECpm` as a rough ordering
+/// hint, not an actual bid.** When AdMob's bidding response-info gains a
+/// programmatic eCPM accessor we can read, this adapter will prefer that
+/// value over the fallback.
 public final class AdMobNetworkAdapter: NSObject, AdNetworkAdapter, @unchecked Sendable {
     public let networkId = "admob"
 
@@ -99,43 +111,50 @@ public final class AdMobNetworkAdapter: NSObject, AdNetworkAdapter, @unchecked S
     /// - description = body
     /// - imageUrl   = images[0]
     ///
-    /// TODO: Replace the body of this function with your product's preferred
-    /// mapping. A few directions to consider (pick the one that matches your
-    /// ad unit's creative style):
+    /// To customize, adjust the ``AdMobNativeAssets`` passed to
+    /// ``AdMobCreativeMapper/makeCreative(from:tracker:renderer:)``:
     ///
     ///   1. Append the CTA to title: `"\(headline) — \(callToAction)"`.
     ///   2. Prefer icon for `GrowlBadgeAdView` contexts (compact format).
     ///   3. Fall back to advertiser name when body is empty.
-    ///   4. Return `nil` when headline is missing — AdMob treats that as
-    ///      a malformed creative and the bid drops from the auction.
     ///
     /// Return `nil` to reject the creative (the bid becomes a no-fill).
     @MainActor
     static func makeCreative(from nativeAd: GADNativeAd) -> GrowlAd? {
-        // Display-only mode: AdMob creatives render through Growl's SwiftUI
-        // card (``GrowlAdView``'s default branch), not a `GADNativeAdView`.
-        //
-        // This is the pre-renderer behavior. AdMob impressions and clicks
-        // are NOT billed in this mode because AdMob's tracking contract
-        // requires `GADNativeAdView` registration — which our SwiftUI card
-        // deliberately does not provide. The upside is visual consistency
-        // with Growl's card style and no AdMob native-ad validator warnings.
-        //
-        // When AdMob revenue matters to a publisher, switch to the renderer
-        // path by building an `AdMobNativeAdRenderer` here and passing it to
-        // ``AdMobCreativeMapper/makeCreative(from:tracker:renderer:)``. The
-        // renderer machinery is intact — see ``AdMobNativeAdRenderer`` and
-        // ``AdMobNativeAdDelegateBridge``.
+        // Always attach a renderer. AdMob counts impressions and clicks only
+        // when the creative is displayed inside a `GADNativeAdView`;
+        // ``GrowlAdView`` detects the renderer and embeds the AdMob-owned
+        // layout. Badge and chat variants remain Growl-styled and are not
+        // safe surfaces for AdMob — gate them on
+        // ``GrowlAd/requiresCustomRendering`` in host code.
+        let renderer = AdMobNativeAdRenderer(
+            nativeAd: nativeAd,
+            delegateBridge: AdMobNativeAdDelegateBridge(onImpression: {}, onClick: {})
+        )
         return AdMobCreativeMapper.makeCreative(
             from: AdMobNativeAssets(
-                identifier: ObjectIdentifier(nativeAd).debugDescription,
+                identifier: stableCreativeId(for: nativeAd),
                 headline: nativeAd.headline,
                 body: nativeAd.body,
                 imageURL: nativeAd.images?.first?.imageURL?.absoluteString
             ),
             tracker: AdMobNativeTracker(nativeAd: nativeAd),
-            renderer: nil
+            renderer: renderer
         )
+    }
+
+    /// Derive a content-stable identifier for a loaded `GADNativeAd`.
+    ///
+    /// Prefer AdMob's `responseIdentifier` (set per ad-request on modern SDK
+    /// versions) so the same creative reports the same id across load /
+    /// impression / click events. Fall back to the Objective-C object pointer
+    /// when the response info is unavailable — still unique for a live ad, but
+    /// not stable across memory releases.
+    private static func stableCreativeId(for nativeAd: GADNativeAd) -> String {
+        if let responseId = nativeAd.responseInfo.responseIdentifier, !responseId.isEmpty {
+            return "admob:\(responseId)"
+        }
+        return "admob:\(ObjectIdentifier(nativeAd).debugDescription)"
     }
 
     private func startGoogleMobileAds() async throws {
