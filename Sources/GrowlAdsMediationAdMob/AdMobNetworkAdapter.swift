@@ -47,10 +47,15 @@ public final class AdMobNetworkAdapter: NSObject, AdNetworkAdapter, @unchecked S
 
     public let requiredInfoPlistKeys: [String] = ["GADApplicationIdentifier"]
 
-    /// Google's primary SKAdNetwork identifier. The full ~50-ID AdMob
-    /// mediation list is out of scope for v1; adapter authors who need
-    /// exhaustive SKAN coverage can subclass and override.
-    public let requiredSKAdNetworkIds: [String] = ["cstr6suwn9.skadnetwork"]
+    /// AdMob's published SKAdNetwork identifiers for iOS install attribution.
+    ///
+    /// Loaded from the bundled `AdMobSKAdNetworkItems.plist` resource, which
+    /// is sourced from Google's official iOS quick-start guide. Refresh the
+    /// plist when Google updates the published list — see
+    /// `Sources/GrowlAdsMediationAdMob/Resources/UPDATING.md`.
+    public var requiredSKAdNetworkIds: [String] {
+        AdMobSKAdNetworkIDs.shared
+    }
 
     private let priceTiers: [AdMobPriceTier]
     private let rootViewControllerProvider: @MainActor @Sendable () -> UIViewController?
