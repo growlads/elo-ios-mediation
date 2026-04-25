@@ -96,10 +96,16 @@ public final class AdMobNetworkAdapter: NSObject, AdNetworkAdapter, @unchecked S
         }
         Self.applyConsent(request.consent, requestConfiguration: GADMobileAds.sharedInstance().requestConfiguration)
 
+        let gadRequest = GADRequest()
+        if let npaExtras = Self.nonPersonalizedExtras(for: request.consent) {
+            gadRequest.register(npaExtras)
+        }
+
         return try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<GADNativeAd?, Error>) in
             let loader = AdMobNativeAdLoader(
                 adUnitId: adUnitId,
                 rootViewController: rootVC,
+                request: gadRequest,
                 continuation: continuation
             )
             loader.load()
@@ -184,6 +190,32 @@ public final class AdMobNetworkAdapter: NSObject, AdNetworkAdapter, @unchecked S
         requestConfiguration.tagForChildDirectedTreatment = NSNumber(value: consent.coppa)
         requestConfiguration.tagForUnderAgeOfConsent = NSNumber(value: consent.tfua)
     }
+
+    /// Build a `GADExtras` instructing AdMob to serve only non-personalized
+    /// ads when GDPR applies and the user has not consented to TCF Purpose 1
+    /// ("Store and/or access information on a device"). Returns `nil`
+    /// otherwise, which lets AdMob default to personalized ads.
+    ///
+    /// Reads `IABTCF_PurposeConsents` from the host app's `UserDefaults` —
+    /// the IAB-standard key written by TCF v2 consent management platforms.
+    /// If the key is absent, treats Purpose 1 as not consented, matching
+    /// AppLovin's adapter behavior in EU traffic where the absence of an IAB
+    /// CMP signals a fail-closed posture.
+    ///
+    /// `userDefaults` is parameterized for tests; production calls pass
+    /// `.standard`.
+    static func nonPersonalizedExtras(
+        for consent: AdConsent,
+        userDefaults: UserDefaults = .standard
+    ) -> GADExtras? {
+        guard consent.gdprApplies == true else { return nil }
+        let purposeConsents = userDefaults.string(forKey: "IABTCF_PurposeConsents") ?? ""
+        let purpose1Consented = purposeConsents.first == "1"
+        guard !purpose1Consented else { return nil }
+        let extras = GADExtras()
+        extras.additionalParameters = ["npa": "1"]
+        return extras
+    }
 }
 
 /// Bridge GADAdLoader's delegate callbacks into a single-shot async return.
@@ -192,6 +224,7 @@ public final class AdMobNetworkAdapter: NSObject, AdNetworkAdapter, @unchecked S
 private final class AdMobNativeAdLoader: NSObject, GADNativeAdLoaderDelegate, @unchecked Sendable {
     private let adUnitId: String
     private let rootViewController: UIViewController?
+    private let request: GADRequest
     private let continuation: CheckedContinuation<GADNativeAd?, Error>
     private var loader: GADAdLoader?
     private var selfRetainer: AdMobNativeAdLoader?
@@ -201,10 +234,12 @@ private final class AdMobNativeAdLoader: NSObject, GADNativeAdLoaderDelegate, @u
     init(
         adUnitId: String,
         rootViewController: UIViewController?,
+        request: GADRequest,
         continuation: CheckedContinuation<GADNativeAd?, Error>
     ) {
         self.adUnitId = adUnitId
         self.rootViewController = rootViewController
+        self.request = request
         self.continuation = continuation
         super.init()
     }
@@ -223,7 +258,7 @@ private final class AdMobNativeAdLoader: NSObject, GADNativeAdLoaderDelegate, @u
         )
         loader.delegate = self
         self.loader = loader
-        loader.load(GADRequest())
+        loader.load(request)
     }
 
     func adLoader(_ adLoader: GADAdLoader, didReceive nativeAd: GADNativeAd) {

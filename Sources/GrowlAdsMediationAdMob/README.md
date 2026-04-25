@@ -122,27 +122,29 @@ Use these only for development and testing.
 
 ## Consent Forwarding
 
-The adapter forwards the per-request `AdConsent` snapshot into the Google Mobile Ads request configuration for:
+The adapter forwards the per-request `AdConsent` snapshot to AdMob in three ways:
 
-- COPPA via `tagForChildDirectedTreatment`
-- TFUA via `tagForUnderAgeOfConsent`
+- **COPPA** → `GADRequestConfiguration.tagForChildDirectedTreatment`.
+- **TFUA** → `GADRequestConfiguration.tagForUnderAgeOfConsent`.
+- **Non-personalized ads (GDPR)** — when `consent.gdprApplies == true` and the
+  user has not consented to TCF Purpose 1, the adapter registers a `GADExtras`
+  with `["npa": "1"]` on each `GADRequest`. Purpose 1 consent is read from
+  `UserDefaults` under the IAB-standard `IABTCF_PurposeConsents` key, which
+  any TCF v2-compliant CMP writes automatically.
 
-These two flags are everything the Google Mobile Ads SDK accepts directly on
-`GADRequestConfiguration`. The remaining consent signals are **not** carried
-through this adapter and are the host app's responsibility:
+The remaining consent strings are picked up by the Google Mobile Ads SDK
+directly and need no adapter wiring:
 
-- **TCF v2 (IAB)** — `tcfString` / `addtlConsent` must be written to
-  `NSUserDefaults` under the standard IAB keys (`IABTCF_*`) by your CMP.
-  Google's SDK reads them from there directly.
-- **GPP (Global Privacy Platform)** — `gppString` / `gppSid` must likewise be
-  written to `NSUserDefaults` under `IABGPP_*` keys by your CMP.
-- **Google UMP** (`GoogleUserMessagingPlatform`) — if you use Google's own CMP,
-  present its form before calling `Growl.configure(with:)` so `gppString` and
-  `tcfString` are in place before the first auction.
+- **TCF v2 (IAB)** — full `IABTCF_TCString` / `IABTCF_AddtlConsent` are read
+  by GMA from `NSUserDefaults`.
+- **GPP (Global Privacy Platform)** — `IABGPP_HDR_GppString` /
+  `IABGPP_HDR_Sections` are read by GMA from `NSUserDefaults`.
+- **Google UMP** (`GoogleUserMessagingPlatform`) — if you use Google's own
+  CMP, present its form before calling `Growl.configure(with:)` so the IAB
+  keys are populated before the first auction.
 
-If any of those signals are required for a given region, the `AdMobNetworkAdapter`
-will still bid — but the resulting request may be treated as non-personalized
-by AdMob. Surface this through your app's CMP, not through `AdConsent`.
+When `gdprApplies` is `false` or unknown, no NPA flag is set and AdMob serves
+its default (personalized) treatment.
 
 ## Version Compatibility
 
