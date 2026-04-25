@@ -1,6 +1,9 @@
 import XCTest
 import GrowlCore
 @testable import GrowlAdsMediationAdMob
+#if canImport(UIKit)
+import UIKit
+#endif
 
 @MainActor
 final class AdMobNetworkAdapterTests: XCTestCase {

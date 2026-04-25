@@ -9,8 +9,10 @@ import GoogleMobileAds
 /// Usage:
 /// ```swift
 /// Growl.configure(with: GrowlConfiguration(
-///     publisherId: "YOUR_GROWL_PUB",
-///     adUnitId: "YOUR_GROWL_AD_UNIT",
+///     growl: GrowlNetworkConfiguration(
+///         publisherId: "YOUR_GROWL_PUB",
+///         adUnitId: "YOUR_GROWL_AD_UNIT"
+///     ),
 ///     adapters: [
 ///         AdMobNetworkAdapter(priceTiers: [
 ///             AdMobPriceTier(adUnitId: "ca-app-pub-.../high",  eCpm: 5.00),
@@ -109,14 +111,23 @@ public final class AdMobNetworkAdapter: NSObject, AdNetworkAdapter, @unchecked S
             gadRequest.register(extras)
         }
 
-        return try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<GADNativeAd?, Error>) in
-            let loader = AdMobNativeAdLoader(
-                adUnitId: adUnitId,
-                rootViewController: rootVC,
-                request: gadRequest,
-                continuation: continuation
-            )
-            loader.load()
+        let loader = AdMobNativeAdLoader(
+            adUnitId: adUnitId,
+            rootViewController: rootVC,
+            request: gadRequest
+        )
+
+        // The mediator races the auction against `auctionTimeout` by cancelling
+        // slow bid tasks. Without this handler the AdMob load would keep its
+        // task suspended until the SDK eventually calls back, defeating the
+        // timeout. `cancel()` resumes the continuation with `CancellationError`
+        // and releases the loader's self-retainer so the task unblocks promptly.
+        return try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<GADNativeAd?, Error>) in
+                loader.start(continuation: continuation)
+            }
+        } onCancel: {
+            loader.cancel()
         }
     }
 
@@ -152,11 +163,12 @@ public final class AdMobNetworkAdapter: NSObject, AdNetworkAdapter, @unchecked S
         // layout. Badge and chat variants remain Growl-styled and are not
         // safe surfaces for AdMob — gate them on
         // ``GrowlAd/requiresCustomRendering`` in host code.
+        let delegateBridge = AdMobNativeAdDelegateBridge()
         let renderer = AdMobNativeAdRenderer(
             nativeAd: nativeAd,
-            delegateBridge: AdMobNativeAdDelegateBridge(onImpression: {}, onClick: {})
+            delegateBridge: delegateBridge
         )
-        return AdMobCreativeMapper.makeCreative(
+        let ad = AdMobCreativeMapper.makeCreative(
             from: AdMobNativeAssets(
                 identifier: stableCreativeId(for: nativeAd),
                 headline: nativeAd.headline,
@@ -166,6 +178,14 @@ public final class AdMobNetworkAdapter: NSObject, AdNetworkAdapter, @unchecked S
             tracker: AdMobNativeTracker(nativeAd: nativeAd),
             renderer: renderer
         )
+        // Wire the delegate bridge to the freshly-built ad so AdMob's
+        // impression and click callbacks reach the publisher's
+        // ``GrowlAdDelegate`` via ``Growl/trackImpression(_:)`` and
+        // ``Growl/trackClick(_:)``.
+        if let ad {
+            delegateBridge.attach(ad: ad)
+        }
+        return ad
     }
 
     /// Derive a content-stable identifier for a loaded `GADNativeAd`.
@@ -202,35 +222,49 @@ public final class AdMobNetworkAdapter: NSObject, AdNetworkAdapter, @unchecked S
 }
 
 /// Bridge GADAdLoader's delegate callbacks into a single-shot async return.
-/// Retained by itself while the load is in flight; released in the
-/// success / failure path.
+///
+/// Construction is split from continuation registration so the surrounding
+/// `withTaskCancellationHandler` can cancel the load before (or while) it is
+/// in flight. The lock orders three states — `pending`, `loading`, `finished`
+/// — so a cancel that races with a successful AdMob callback resolves to a
+/// single resume.
 private final class AdMobNativeAdLoader: NSObject, GADNativeAdLoaderDelegate, @unchecked Sendable {
     private let adUnitId: String
     private let rootViewController: UIViewController?
     private let request: GADRequest
-    private let continuation: CheckedContinuation<GADNativeAd?, Error>
+
+    private let lock = NSLock()
+    private var continuation: CheckedContinuation<GADNativeAd?, Error>?
     private var loader: GADAdLoader?
     private var selfRetainer: AdMobNativeAdLoader?
     private var completed = false
-    private let lock = NSLock()
+    private var cancelledBeforeStart = false
 
     init(
         adUnitId: String,
         rootViewController: UIViewController?,
-        request: GADRequest,
-        continuation: CheckedContinuation<GADNativeAd?, Error>
+        request: GADRequest
     ) {
         self.adUnitId = adUnitId
         self.rootViewController = rootViewController
         self.request = request
-        self.continuation = continuation
         super.init()
     }
 
-    func load() {
+    /// Register the continuation and start the AdMob load. If `cancel()` ran
+    /// before this call (the task was already cancelled), resume immediately
+    /// with `CancellationError` so the parent task unblocks.
+    func start(continuation: CheckedContinuation<GADNativeAd?, Error>) {
+        lock.lock()
+        if cancelledBeforeStart {
+            lock.unlock()
+            continuation.resume(throwing: CancellationError())
+            return
+        }
+        self.continuation = continuation
         // Keep the delegate bridge alive until AdMob calls back. Without this,
-        // the local `loader` variable in `withCheckedThrowingContinuation`
-        // drops its last strong reference before the SDK finishes loading.
+        // the local `loader` reference would drop before the SDK finishes
+        // loading.
         selfRetainer = self
         let options = GADNativeAdViewAdOptions()
         let loader = GADAdLoader(
@@ -241,7 +275,23 @@ private final class AdMobNativeAdLoader: NSObject, GADNativeAdLoaderDelegate, @u
         )
         loader.delegate = self
         self.loader = loader
+        lock.unlock()
         loader.load(request)
+    }
+
+    /// Resolve the in-flight load with `CancellationError`. Safe to call from
+    /// any thread and at any point in the loader's lifecycle: before
+    /// `start(continuation:)` registers a continuation, while AdMob is
+    /// loading, or after a successful resolve (last call wins are no-ops).
+    func cancel() {
+        lock.lock()
+        if continuation == nil && !completed {
+            cancelledBeforeStart = true
+            lock.unlock()
+            return
+        }
+        lock.unlock()
+        finish(.failure(CancellationError()))
     }
 
     func adLoader(_ adLoader: GADAdLoader, didReceive nativeAd: GADNativeAd) {
@@ -261,14 +311,21 @@ private final class AdMobNativeAdLoader: NSObject, GADNativeAdLoaderDelegate, @u
 
     private func finish(_ result: Result<GADNativeAd?, Error>) {
         lock.lock()
-        defer { lock.unlock() }
-        guard !completed else { return }
+        guard !completed else {
+            lock.unlock()
+            return
+        }
         completed = true
+        let pendingContinuation = continuation
+        continuation = nil
         loader = nil
         selfRetainer = nil
+        lock.unlock()
+
+        guard let pendingContinuation else { return }
         switch result {
-        case .success(let ad): continuation.resume(returning: ad)
-        case .failure(let err): continuation.resume(throwing: err)
+        case .success(let ad): pendingContinuation.resume(returning: ad)
+        case .failure(let err): pendingContinuation.resume(throwing: err)
         }
     }
 }

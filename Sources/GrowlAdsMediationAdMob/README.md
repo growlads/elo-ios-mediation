@@ -73,8 +73,10 @@ import GrowlAdsMediationAdMob
 
 Growl.configure(
     with: .init(
-        publisherId: "YOUR_GROWL_PUBLISHER_ID",
-        adUnitId: "YOUR_GROWL_AD_UNIT_ID",
+        growl: .init(
+            publisherId: "YOUR_GROWL_PUBLISHER_ID",
+            adUnitId: "YOUR_GROWL_AD_UNIT_ID"
+        ),
         adapters: [
             AdMobNetworkAdapter(
                 priceTiers: [
