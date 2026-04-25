@@ -77,8 +77,11 @@ Growl.configure(
         adUnitId: "YOUR_GROWL_AD_UNIT_ID",
         adapters: [
             AdMobNetworkAdapter(
-                adUnitId: "ca-app-pub-XXXXXXXXXXXXXXXX/ZZZZZZZZZZ",
-                assumedECpm: 2.0,
+                priceTiers: [
+                    AdMobPriceTier(adUnitId: "ca-app-pub-XXXXXXXXXXXXXXXX/HIGH",  eCpm: 5.00),
+                    AdMobPriceTier(adUnitId: "ca-app-pub-XXXXXXXXXXXXXXXX/MID",   eCpm: 2.00),
+                    AdMobPriceTier(adUnitId: "ca-app-pub-XXXXXXXXXXXXXXXX/FLOOR", eCpm: 0.50),
+                ],
                 rootViewController: { @MainActor in
                     UIApplication.shared.connectedScenes
                         .compactMap { $0 as? UIWindowScene }
@@ -92,14 +95,21 @@ Growl.configure(
 )
 ```
 
-### About `assumedECpm`
+### Price tiers
 
-`GADNativeAd` does not expose a bid price, so the adapter reports a static
-`assumedECpm` on every successful fill. This is a **v1 placeholder, not a real
-bid** — the mediator cannot price-compare AdMob against other networks until
-AdMob exposes a programmatic eCPM. Treat the value as a coarse ordering hint
-(typically your historical AdMob eCPM for this ad unit) and revisit once the
-adapter reads a real price.
+`GADNativeAd` does not expose a programmatic bid price. To make AdMob fills
+compete fairly in Growl's auction, configure AdMob ad units at fixed eCPM
+floors in the AdMob console (e.g. `$5`, `$2`, `$0.50`) and pass them as
+`priceTiers` ordered highest-first.
+
+The adapter loads tiers sequentially. The first tier that fills wins, and that
+tier's `eCpm` is the bid value reported to the mediator. *Which tier fills* is
+driven by AdMob's actual demand at each floor — high-eCPM tiers no-fill more
+often than low-eCPM tiers, so the waterfall naturally finds the best
+real-world price.
+
+A single-tier setup (one ad unit) is fine for getting started; add more tiers
+once you have AdMob historical eCPM data to set realistic floors.
 
 ## Test IDs
 

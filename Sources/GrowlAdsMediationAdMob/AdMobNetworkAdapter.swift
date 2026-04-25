@@ -12,10 +12,11 @@ import GoogleMobileAds
 ///     publisherId: "YOUR_GROWL_PUB",
 ///     adUnitId: "YOUR_GROWL_AD_UNIT",
 ///     adapters: [
-///         AdMobNetworkAdapter(
-///             adUnitId: "ca-app-pub-.../1234567890",
-///             assumedECpm: 1.50
-///         ),
+///         AdMobNetworkAdapter(priceTiers: [
+///             AdMobPriceTier(adUnitId: "ca-app-pub-.../high",  eCpm: 5.00),
+///             AdMobPriceTier(adUnitId: "ca-app-pub-.../mid",   eCpm: 2.00),
+///             AdMobPriceTier(adUnitId: "ca-app-pub-.../floor", eCpm: 0.50),
+///         ]),
 ///     ]
 /// ))
 /// ```
@@ -33,13 +34,14 @@ import GoogleMobileAds
 /// Branch on ``GrowlAd/requiresCustomRendering`` to choose which surfaces to
 /// show for a given bid.
 ///
-/// eCPM: `GADNativeAd` does not expose a bid price directly; the adapter
-/// reports the publisher-set ``assumedECpm`` as a fallback. **Because this is
-/// a static value, Growl's mediator cannot price-compare AdMob's real fill
-/// against other networks in v1 — treat `assumedECpm` as a rough ordering
-/// hint, not an actual bid.** When AdMob's bidding response-info gains a
-/// programmatic eCPM accessor we can read, this adapter will prefer that
-/// value over the fallback.
+/// eCPM: `GADNativeAd` does not expose a programmatic bid price. To make
+/// AdMob fills compete fairly in Growl's auction, publishers configure AdMob
+/// ad units at fixed eCPM floors and pass them as ``priceTiers`` ordered
+/// highest-first. The adapter loads tiers sequentially; the first tier that
+/// fills wins, and that tier's ``AdMobPriceTier/eCpm`` is the bid value
+/// reported to the mediator. The price floors are authoritative — AdMob does
+/// not surface a real bid price, but *which tier fills* is driven by AdMob's
+/// actual demand at each floor.
 public final class AdMobNetworkAdapter: NSObject, AdNetworkAdapter, @unchecked Sendable {
     public let networkId = "admob"
 
@@ -50,24 +52,22 @@ public final class AdMobNetworkAdapter: NSObject, AdNetworkAdapter, @unchecked S
     /// exhaustive SKAN coverage can subclass and override.
     public let requiredSKAdNetworkIds: [String] = ["cstr6suwn9.skadnetwork"]
 
-    private let adUnitId: String
-    private let assumedECpm: Double
+    private let priceTiers: [AdMobPriceTier]
     private let rootViewControllerProvider: @MainActor @Sendable () -> UIViewController?
 
     /// - Parameters:
-    ///   - adUnitId: Your AdMob native ad unit id
-    ///     (e.g. `"ca-app-pub-3940256099942544/2247696110"` for test ads).
-    ///   - assumedECpm: Static bid value reported to Growl's mediator.
+    ///   - priceTiers: AdMob ad units ordered highest-eCPM-first. The adapter
+    ///     loads tiers sequentially and returns the first fill, with that
+    ///     tier's ``AdMobPriceTier/eCpm`` as the bid value. Must be non-empty.
     ///   - rootViewController: Closure returning the view controller AdMob
     ///     should anchor its ad loading to. Use `nil` only if you know the
     ///     ad format doesn't need one.
     public init(
-        adUnitId: String,
-        assumedECpm: Double,
+        priceTiers: [AdMobPriceTier],
         rootViewController: @escaping @MainActor @Sendable () -> UIViewController? = { nil }
     ) {
-        self.adUnitId = adUnitId
-        self.assumedECpm = assumedECpm
+        precondition(!priceTiers.isEmpty, "AdMobNetworkAdapter requires at least one price tier")
+        self.priceTiers = priceTiers
         self.rootViewControllerProvider = rootViewController
         super.init()
     }
@@ -77,16 +77,20 @@ public final class AdMobNetworkAdapter: NSObject, AdNetworkAdapter, @unchecked S
     }
 
     public func bid(_ request: AdBidRequest) async throws -> AdBid? {
-        let nativeAd = try await loadNativeAd(request: request)
-        guard let nativeAd else { return nil }
-
-        guard let ad = await Self.makeCreative(from: nativeAd) else { return nil }
-        return AdBid(networkId: networkId, eCpm: assumedECpm, ad: ad)
+        let deadline = Date().addingTimeInterval(request.timeout)
+        for tier in priceTiers {
+            if Date() >= deadline { return nil }
+            let nativeAd = try await loadNativeAd(adUnitId: tier.adUnitId, request: request)
+            guard let nativeAd else { continue }
+            guard let ad = await Self.makeCreative(from: nativeAd) else { continue }
+            return AdBid(networkId: networkId, eCpm: tier.eCpm, ad: ad)
+        }
+        return nil
     }
 
     // MARK: - GADAdLoader async bridge
 
-    private func loadNativeAd(request: AdBidRequest) async throws -> GADNativeAd? {
+    private func loadNativeAd(adUnitId: String, request: AdBidRequest) async throws -> GADNativeAd? {
         let rootVC = await MainActor.run {
             rootViewControllerProvider()
         }
