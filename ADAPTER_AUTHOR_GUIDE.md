@@ -77,6 +77,30 @@ Map the network-native ad object into `GrowlAd` as close to the adapter boundary
 - Keep mapping logic isolated and testable without requiring the full third-party SDK whenever possible.
 - Put network-specific tracking in the `AdTracker` implementation, not in the mediator or view layer.
 
+## Packaging closed-source SDKs (xcframework)
+
+Some networks ship as a closed-source `.xcframework` rather than an SPM-compatible source package. Bundle these via `binaryTarget` so the adapter remains a pure Swift target without dragging dynamic CocoaPods into the host.
+
+```swift
+// Package.swift (adapter author's package)
+.binaryTarget(
+    name: "VendorSDK",
+    path: "Frameworks/VendorSDK.xcframework"
+),
+.target(
+    name: "GrowlAdsMediationVendor",
+    dependencies: ["GrowlCore", "VendorSDK"],
+    path: "Sources/GrowlAdsMediationVendor"
+),
+```
+
+Notes:
+
+- Commit the `.xcframework` to the repo or fetch it from a stable URL via `binaryTarget(name:url:checksum:)`.
+- Match the vendor's privacy manifest (`PrivacyInfo.xcprivacy`) requirements; include it as a `resources:` entry on the adapter target so App Store review picks it up.
+- Forward `requiredSKAdNetworkIds` from the vendor's documented list. The startup validator will warn the publisher if the host `Info.plist` is missing entries.
+- Mark the adapter's deployment target ≥ the vendor's documented minimum.
+
 ## Testing expectations
 
 Each adapter should ship with tests for:
