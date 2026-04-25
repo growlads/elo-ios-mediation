@@ -31,6 +31,14 @@ final class AdMobNativeAdRenderer: AdRenderer, @unchecked Sendable {
     private let nativeAd: GADNativeAd
     private let delegateBridge: AdMobNativeAdDelegateBridge
 
+    /// Cached `GADNativeAdView` so the SwiftUI representable returns the
+    /// same instance across re-mounts (e.g. tab switches). Constructing a
+    /// fresh `GADNativeAdView` per re-mount and re-assigning `nativeAd =`
+    /// re-arms tracking but does not always re-render the bound
+    /// `GADMediaView`'s image, leaving the ad text-only on subsequent
+    /// mounts. Reusing the same view also avoids double impressions.
+    private var cachedView: GADNativeAdView?
+
     init(
         nativeAd: GADNativeAd,
         delegateBridge: AdMobNativeAdDelegateBridge
@@ -40,6 +48,13 @@ final class AdMobNativeAdRenderer: AdRenderer, @unchecked Sendable {
     }
 
     func makeView() -> AnyObject {
+        if let cached = cachedView {
+            // SwiftUI hands the view to a new host on re-mount; detach from
+            // the previous host first so AutoLayout doesn't fight the move.
+            cached.removeFromSuperview()
+            return cached
+        }
+
         let nativeAdView = GADNativeAdView()
         nativeAdView.translatesAutoresizingMaskIntoConstraints = false
         nativeAdView.backgroundColor = .secondarySystemBackground
@@ -139,6 +154,7 @@ final class AdMobNativeAdRenderer: AdRenderer, @unchecked Sendable {
         nativeAd.delegate = delegateBridge
         nativeAdView.nativeAd = nativeAd
 
+        cachedView = nativeAdView
         return nativeAdView
     }
 }
