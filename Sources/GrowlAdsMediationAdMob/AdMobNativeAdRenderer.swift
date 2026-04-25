@@ -30,6 +30,7 @@ import UIKit
 final class AdMobNativeAdRenderer: AdRenderer, @unchecked Sendable {
     private let nativeAd: GADNativeAd
     private let delegateBridge: AdMobNativeAdDelegateBridge
+    private let style: AdMobNativeStyle
 
     /// Cached `GADNativeAdView` so the SwiftUI representable returns the
     /// same instance across re-mounts (e.g. tab switches). Constructing a
@@ -41,10 +42,12 @@ final class AdMobNativeAdRenderer: AdRenderer, @unchecked Sendable {
 
     init(
         nativeAd: GADNativeAd,
-        delegateBridge: AdMobNativeAdDelegateBridge
+        delegateBridge: AdMobNativeAdDelegateBridge,
+        style: AdMobNativeStyle = .default
     ) {
         self.nativeAd = nativeAd
         self.delegateBridge = delegateBridge
+        self.style = style
     }
 
     func makeView() -> AnyObject {
@@ -57,16 +60,20 @@ final class AdMobNativeAdRenderer: AdRenderer, @unchecked Sendable {
 
         let nativeAdView = GADNativeAdView()
         nativeAdView.translatesAutoresizingMaskIntoConstraints = false
-        nativeAdView.backgroundColor = .secondarySystemBackground
-        nativeAdView.layer.cornerRadius = 12
+        nativeAdView.backgroundColor = style.cardBackground ?? .secondarySystemBackground
+        nativeAdView.layer.cornerRadius = style.cornerRadius ?? 12
         nativeAdView.layer.cornerCurve = .continuous
         nativeAdView.clipsToBounds = true
+        if let borderColor = style.borderColor, let borderWidth = style.borderWidth {
+            nativeAdView.layer.borderColor = borderColor.cgColor
+            nativeAdView.layer.borderWidth = borderWidth
+        }
 
         let sponsoredLabel = UILabel()
         sponsoredLabel.translatesAutoresizingMaskIntoConstraints = false
         sponsoredLabel.text = "📢 Sponsored"
         sponsoredLabel.font = .preferredFont(forTextStyle: .caption2)
-        sponsoredLabel.textColor = .secondaryLabel
+        sponsoredLabel.textColor = style.badgeColor ?? .secondaryLabel
         nativeAdView.addSubview(sponsoredLabel)
 
         let adChoicesView = GADAdChoicesView()
@@ -101,7 +108,7 @@ final class AdMobNativeAdRenderer: AdRenderer, @unchecked Sendable {
         headlineLabel.font = .systemFont(ofSize: 16, weight: .semibold)
         headlineLabel.numberOfLines = 0
         headlineLabel.lineBreakMode = .byWordWrapping
-        headlineLabel.textColor = .label
+        headlineLabel.textColor = style.titleColor ?? .label
         headlineLabel.text = nativeAd.headline
         nativeAdView.addSubview(headlineLabel)
         nativeAdView.headlineView = headlineLabel
@@ -111,7 +118,7 @@ final class AdMobNativeAdRenderer: AdRenderer, @unchecked Sendable {
         bodyLabel.font = .systemFont(ofSize: 13)
         bodyLabel.numberOfLines = 0
         bodyLabel.lineBreakMode = .byWordWrapping
-        bodyLabel.textColor = .secondaryLabel
+        bodyLabel.textColor = style.descriptionColor ?? .secondaryLabel
         bodyLabel.text = nativeAd.body
         bodyLabel.isHidden = (nativeAd.body?.isEmpty ?? true)
         nativeAdView.addSubview(bodyLabel)

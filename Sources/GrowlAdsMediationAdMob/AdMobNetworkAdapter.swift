@@ -61,6 +61,7 @@ public final class AdMobNetworkAdapter: NSObject, AdNetworkAdapter, @unchecked S
 
     private let priceTiers: [AdMobPriceTier]
     private let rootViewControllerProvider: @MainActor @Sendable () -> UIViewController?
+    private let nativeAdStyle: AdMobNativeStyle
 
     /// - Parameters:
     ///   - priceTiers: AdMob ad units ordered highest-eCPM-first. The adapter
@@ -69,13 +70,20 @@ public final class AdMobNetworkAdapter: NSObject, AdNetworkAdapter, @unchecked S
     ///   - rootViewController: Closure returning the view controller AdMob
     ///     should anchor its ad loading to. Use `nil` only if you know the
     ///     ad format doesn't need one.
+    ///   - nativeAdStyle: Visual overrides applied to the
+    ///     ``GADNativeAdView`` that ``AdMobNativeAdRenderer`` builds. Only
+    ///     non-nil fields are applied; everything else falls back to system
+    ///     colors. Use this to keep AdMob fills visually consistent with the
+    ///     SwiftUI ``GrowlAdStyle`` you've applied to Growl-direct cards.
     public init(
         priceTiers: [AdMobPriceTier],
-        rootViewController: @escaping @MainActor @Sendable () -> UIViewController? = { nil }
+        rootViewController: @escaping @MainActor @Sendable () -> UIViewController? = { nil },
+        nativeAdStyle: AdMobNativeStyle = .default
     ) {
         precondition(!priceTiers.isEmpty, "AdMobNetworkAdapter requires at least one price tier")
         self.priceTiers = priceTiers
         self.rootViewControllerProvider = rootViewController
+        self.nativeAdStyle = nativeAdStyle
         super.init()
     }
 
@@ -91,7 +99,7 @@ public final class AdMobNetworkAdapter: NSObject, AdNetworkAdapter, @unchecked S
                 guard let nativeAd = try await loadNativeAd(adUnitId: adUnitId, request: request) else {
                     return nil
                 }
-                return await Self.makeCreative(from: nativeAd)
+                return await Self.makeCreative(from: nativeAd, style: nativeAdStyle)
             }
         )
     }
@@ -156,7 +164,10 @@ public final class AdMobNetworkAdapter: NSObject, AdNetworkAdapter, @unchecked S
     ///
     /// Return `nil` to reject the creative (the bid becomes a no-fill).
     @MainActor
-    static func makeCreative(from nativeAd: GADNativeAd) -> GrowlAd? {
+    static func makeCreative(
+        from nativeAd: GADNativeAd,
+        style: AdMobNativeStyle = .default
+    ) -> GrowlAd? {
         // Always attach a renderer. AdMob counts impressions and clicks only
         // when the creative is displayed inside a `GADNativeAdView`;
         // ``GrowlAdView`` detects the renderer and embeds the AdMob-owned
@@ -166,7 +177,8 @@ public final class AdMobNetworkAdapter: NSObject, AdNetworkAdapter, @unchecked S
         let delegateBridge = AdMobNativeAdDelegateBridge()
         let renderer = AdMobNativeAdRenderer(
             nativeAd: nativeAd,
-            delegateBridge: delegateBridge
+            delegateBridge: delegateBridge,
+            style: style
         )
         let ad = AdMobCreativeMapper.makeCreative(
             from: AdMobNativeAssets(
