@@ -7,24 +7,29 @@ import UIKit
 
 /// Builds a compact horizontal `GADNativeAdView` that visually matches
 /// ``GrowlAdView``'s Growl-sourced card: "📢 Sponsored" badge on top, a
-/// 120pt-wide `GADMediaView` on the leading edge that stretches vertically
-/// to fill the card (≥120pt min, more when body copy is long), headline +
-/// body stacked to its trailing side, `GADAdChoicesView` in the top-right
-/// corner.
+/// 120×120 `GADMediaView` on the leading edge, headline + body stacked to
+/// its trailing side, `GADAdChoicesView` in the top-right corner.
 ///
-/// Why 120pt-wide MediaView with flexible height:
+/// Why 120×120 square for MediaView:
 ///
 /// - AdMob's validator warns "MediaView is too small for video" whenever
 ///   the registered MediaView is smaller than 120×120, independent of the
 ///   current creative's content type — the check is preemptive to cover
 ///   future video fills on the same ad unit. 120pt is the floor.
-/// - The height is `≥ 120` and pinned to the card bottom, so when the body
-///   text wraps to multiple lines and pushes the card taller than 120pt,
-///   the mediaView grows with it instead of leaving an empty band on the
-///   left. Width stays fixed at 120pt to keep the text column predictable.
+/// - A fixed square (rather than aspect-ratio-driven) keeps the card height
+///   stable across creatives — SwiftUI feeds sent through a `LazyVStack`
+///   don't jitter when the next auction delivers an ad with a different
+///   aspect ratio.
 /// - Text column width on iPhone-SE-class devices (343pt container) is
 ///   ~187pt after paddings, which wraps a typical body into 2–3 lines.
 ///   Larger phones (390pt+) fit most bodies in 2 lines.
+/// - Stretching the mediaView vertically when body copy is long was tried
+///   but produced a worse outcome: GADMediaView preserves the underlying
+///   mediaContent's aspect ratio internally, so a taller mediaView frame
+///   renders the same square creative centered with letterboxed empty
+///   space inside the media slot. Accepting a small empty band on the
+///   left below the image is the lesser evil until a vertical layout
+///   refactor.
 ///
 /// Not yet responsive to SwiftUI's `\.growlAdStyle` environment — defaults
 /// match Growl's card colors so styled and unstyled apps look close.
@@ -139,8 +144,8 @@ final class AdMobNativeAdRenderer: AdRenderer, @unchecked Sendable {
             mediaView.topAnchor.constraint(equalTo: sponsoredLabel.bottomAnchor, constant: 8),
             mediaView.leadingAnchor.constraint(equalTo: nativeAdView.leadingAnchor, constant: 12),
             mediaView.widthAnchor.constraint(equalToConstant: 120),
-            mediaView.heightAnchor.constraint(greaterThanOrEqualToConstant: 120),
-            mediaView.bottomAnchor.constraint(equalTo: nativeAdView.bottomAnchor, constant: -12),
+            mediaView.heightAnchor.constraint(equalToConstant: 120),
+            mediaView.bottomAnchor.constraint(lessThanOrEqualTo: nativeAdView.bottomAnchor, constant: -12),
 
             headlineLabel.topAnchor.constraint(equalTo: mediaView.topAnchor),
             headlineLabel.leadingAnchor.constraint(equalTo: mediaView.trailingAnchor, constant: 12),
