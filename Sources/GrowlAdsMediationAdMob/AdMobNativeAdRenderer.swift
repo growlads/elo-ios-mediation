@@ -7,19 +7,21 @@ import UIKit
 
 /// Builds a compact horizontal `GADNativeAdView` that visually matches
 /// ``GrowlAdView``'s Growl-sourced card: "📢 Sponsored" badge on top, a
-/// 120×120 `GADMediaView` on the leading edge, headline + body stacked to
-/// its trailing side, `GADAdChoicesView` in the top-right corner.
+/// 120pt-wide `GADMediaView` on the leading edge that stretches vertically
+/// to fill the card (≥120pt min, more when body copy is long), headline +
+/// body stacked to its trailing side, `GADAdChoicesView` in the top-right
+/// corner.
 ///
-/// Why 120×120 square for MediaView:
+/// Why 120pt-wide MediaView with flexible height:
 ///
 /// - AdMob's validator warns "MediaView is too small for video" whenever
 ///   the registered MediaView is smaller than 120×120, independent of the
 ///   current creative's content type — the check is preemptive to cover
 ///   future video fills on the same ad unit. 120pt is the floor.
-/// - A fixed square (rather than aspect-ratio-driven) keeps the card height
-///   stable across creatives — SwiftUI feeds sent through a `LazyVStack`
-///   don't jitter when the next auction delivers an ad with a different
-///   aspect ratio.
+/// - The height is `≥ 120` and pinned to the card bottom, so when the body
+///   text wraps to multiple lines and pushes the card taller than 120pt,
+///   the mediaView grows with it instead of leaving an empty band on the
+///   left. Width stays fixed at 120pt to keep the text column predictable.
 /// - Text column width on iPhone-SE-class devices (343pt container) is
 ///   ~187pt after paddings, which wraps a typical body into 2–3 lines.
 ///   Larger phones (390pt+) fit most bodies in 2 lines.
@@ -137,8 +139,8 @@ final class AdMobNativeAdRenderer: AdRenderer, @unchecked Sendable {
             mediaView.topAnchor.constraint(equalTo: sponsoredLabel.bottomAnchor, constant: 8),
             mediaView.leadingAnchor.constraint(equalTo: nativeAdView.leadingAnchor, constant: 12),
             mediaView.widthAnchor.constraint(equalToConstant: 120),
-            mediaView.heightAnchor.constraint(equalToConstant: 120),
-            mediaView.bottomAnchor.constraint(lessThanOrEqualTo: nativeAdView.bottomAnchor, constant: -12),
+            mediaView.heightAnchor.constraint(greaterThanOrEqualToConstant: 120),
+            mediaView.bottomAnchor.constraint(equalTo: nativeAdView.bottomAnchor, constant: -12),
 
             headlineLabel.topAnchor.constraint(equalTo: mediaView.topAnchor),
             headlineLabel.leadingAnchor.constraint(equalTo: mediaView.trailingAnchor, constant: 12),
