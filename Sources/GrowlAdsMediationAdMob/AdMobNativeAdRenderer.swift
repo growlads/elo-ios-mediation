@@ -23,13 +23,18 @@ import UIKit
 /// - Text column width on iPhone-SE-class devices (343pt container) is
 ///   ~187pt after paddings, which wraps a typical body into 2–3 lines.
 ///   Larger phones (390pt+) fit most bodies in 2 lines.
-/// - Stretching the mediaView vertically when body copy is long was tried
-///   but produced a worse outcome: GADMediaView preserves the underlying
-///   mediaContent's aspect ratio internally, so a taller mediaView frame
-///   renders the same square creative centered with letterboxed empty
-///   space inside the media slot. Accepting a small empty band on the
-///   left below the image is the lesser evil until a vertical layout
-///   refactor.
+///
+/// Why two-phase rendering (`makeView` builds chrome, `update` binds data):
+///
+/// Mirrors AdMob's official SwiftUI sample. Each SwiftUI host gets a fresh
+/// `GADNativeAdView` (sharing one across hosts breaks UIKit's "one
+/// superview per view" invariant — e.g. switching from Chat to Formats
+/// would yank the cached view out of Chat's hierarchy). Asset binding —
+/// especially `nativeAdView.mediaView?.mediaContent = …` and the final
+/// `nativeAdView.nativeAd = …` registration — is deferred to `update(_:)`
+/// so it runs *after* SwiftUI has placed the view in its window. That
+/// timing matters: `GADMediaView` lazily resolves its image based on the
+/// registered subview's frame, and frames are zero before the host attaches.
 ///
 /// Not yet responsive to SwiftUI's `\.growlAdStyle` environment — defaults
 /// match Growl's card colors so styled and unstyled apps look close.
@@ -38,14 +43,6 @@ final class AdMobNativeAdRenderer: AdRenderer, @unchecked Sendable {
     private let nativeAd: GADNativeAd
     private let delegateBridge: AdMobNativeAdDelegateBridge
     private let style: AdMobNativeStyle
-
-    /// Cached `GADNativeAdView` so the SwiftUI representable returns the
-    /// same instance across re-mounts (e.g. tab switches). Constructing a
-    /// fresh `GADNativeAdView` per re-mount and re-assigning `nativeAd =`
-    /// re-arms tracking but does not always re-render the bound
-    /// `GADMediaView`'s image, leaving the ad text-only on subsequent
-    /// mounts. Reusing the same view also avoids double impressions.
-    private var cachedView: GADNativeAdView?
 
     init(
         nativeAd: GADNativeAd,
@@ -58,13 +55,6 @@ final class AdMobNativeAdRenderer: AdRenderer, @unchecked Sendable {
     }
 
     func makeView() -> AnyObject {
-        if let cached = cachedView {
-            // SwiftUI hands the view to a new host on re-mount; detach from
-            // the previous host first so AutoLayout doesn't fight the move.
-            cached.removeFromSuperview()
-            return cached
-        }
-
         let nativeAdView = GADNativeAdView()
         nativeAdView.translatesAutoresizingMaskIntoConstraints = false
         nativeAdView.backgroundColor = style.cardBackground ?? .secondarySystemBackground
@@ -95,7 +85,6 @@ final class AdMobNativeAdRenderer: AdRenderer, @unchecked Sendable {
         mediaView.layer.cornerRadius = 8
         mediaView.layer.cornerCurve = .continuous
         mediaView.backgroundColor = .tertiarySystemBackground
-        mediaView.mediaContent = nativeAd.mediaContent
         nativeAdView.addSubview(mediaView)
         nativeAdView.mediaView = mediaView
 
@@ -116,7 +105,6 @@ final class AdMobNativeAdRenderer: AdRenderer, @unchecked Sendable {
         headlineLabel.numberOfLines = 0
         headlineLabel.lineBreakMode = .byWordWrapping
         headlineLabel.textColor = style.titleColor ?? .label
-        headlineLabel.text = nativeAd.headline
         nativeAdView.addSubview(headlineLabel)
         nativeAdView.headlineView = headlineLabel
 
@@ -126,8 +114,6 @@ final class AdMobNativeAdRenderer: AdRenderer, @unchecked Sendable {
         bodyLabel.numberOfLines = 0
         bodyLabel.lineBreakMode = .byWordWrapping
         bodyLabel.textColor = style.descriptionColor ?? .secondaryLabel
-        bodyLabel.text = nativeAd.body
-        bodyLabel.isHidden = (nativeAd.body?.isEmpty ?? true)
         nativeAdView.addSubview(bodyLabel)
         nativeAdView.bodyView = bodyLabel
 
@@ -161,15 +147,37 @@ final class AdMobNativeAdRenderer: AdRenderer, @unchecked Sendable {
         headlineLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         bodyLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
 
-        // Wire tracking last: delegate before `nativeAd` assignment so the
-        // impression callback that fires on view-attachment isn't missed.
-        // Assigning `nativeAd` arms AdMob's click tracking on the registered
-        // subviews.
+        // Set the delegate now (idempotent across multiple makeView calls)
+        // so the impression callback that fires on view-attachment isn't
+        // missed by the time `nativeAd =` runs in `update(_:)`.
         nativeAd.delegate = delegateBridge
-        nativeAdView.nativeAd = nativeAd
 
-        cachedView = nativeAdView
         return nativeAdView
+    }
+
+    /// Bind ad assets in the exact order Google's `SwiftUIDemo/Native/
+    /// NativeContentView.swift` uses — text and `mediaContent` first, then
+    /// `nativeAd =` last. Assigning `nativeAd` is the registration step:
+    /// it arms click & impression tracking AND tells the registered
+    /// `GADMediaView` to actually render the `mediaContent` we just put
+    /// on it. Reversing the order means registration runs against an
+    /// empty mediaView and the asset never makes it onto screen.
+    ///
+    /// Re-binding on every SwiftUI invalidation matches the sample and is
+    /// idempotent for AdMob — the SDK detects same-reference re-assignment
+    /// and skips re-arming the tracking.
+    func update(_ view: AnyObject) {
+        guard let nativeAdView = view as? GADNativeAdView else { return }
+
+        (nativeAdView.headlineView as? UILabel)?.text = nativeAd.headline
+        nativeAdView.mediaView?.mediaContent = nativeAd.mediaContent
+        if let bodyLabel = nativeAdView.bodyView as? UILabel {
+            bodyLabel.text = nativeAd.body
+            bodyLabel.isHidden = (nativeAd.body?.isEmpty ?? true)
+        }
+
+        // Required to make the ad clickable. Must be the final binding step.
+        nativeAdView.nativeAd = nativeAd
     }
 }
 
