@@ -1,5 +1,5 @@
 import Foundation
-import GrowlCore
+import GrowlAds
 
 struct AdMobNativeAssets: Sendable, Equatable {
     let identifier: String

@@ -1,5 +1,5 @@
 import XCTest
-import GrowlCore
+import GrowlAds
 @testable import GrowlAdsMediationAdMob
 #if canImport(UIKit)
 import UIKit

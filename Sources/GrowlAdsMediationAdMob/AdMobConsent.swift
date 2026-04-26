@@ -1,5 +1,5 @@
 import Foundation
-import GrowlCore
+import GrowlAds
 
 /// Consent-derived parameters that the adapter forwards to the Google Mobile
 /// Ads SDK on each request.

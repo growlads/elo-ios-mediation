@@ -1,5 +1,5 @@
 import Foundation
-import GrowlCore
+import GrowlAds
 
 /// Sequential price-tier waterfall used by ``AdMobNetworkAdapter`` to drive
 /// AdMob fills against an explicit eCPM ladder.

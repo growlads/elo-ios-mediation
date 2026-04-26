@@ -1,5 +1,5 @@
 import Foundation
-import GrowlCore
+import GrowlAds
 
 #if canImport(GoogleMobileAds) && canImport(UIKit)
 import UIKit
