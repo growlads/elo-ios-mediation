@@ -62,6 +62,7 @@ public final class AdMobNetworkAdapter: NSObject, AdNetworkAdapter, @unchecked S
     private let priceTiers: [AdMobPriceTier]
     private let rootViewControllerProvider: @MainActor @Sendable () -> UIViewController?
     private let nativeAdStyle: AdMobNativeStyle
+    private let nativeAdLayout: AdMobNativeLayout
 
     /// - Parameters:
     ///   - priceTiers: AdMob ad units ordered highest-eCPM-first. The adapter
@@ -75,15 +76,21 @@ public final class AdMobNetworkAdapter: NSObject, AdNetworkAdapter, @unchecked S
     ///     non-nil fields are applied; everything else falls back to system
     ///     colors. Use this to keep AdMob fills visually consistent with the
     ///     SwiftUI ``GrowlAdStyle`` you've applied to Growl-direct cards.
+    ///   - nativeAdLayout: Visual treatment of the AdMob native card.
+    ///     Defaults to ``AdMobNativeLayout/compactHorizontal``. Use
+    ///     ``AdMobNativeLayout/heroCard`` for slot-sized surfaces or
+    ///     ``AdMobNativeLayout/listRow`` for dense feeds.
     public init(
         priceTiers: [AdMobPriceTier],
         rootViewController: @escaping @MainActor @Sendable () -> UIViewController? = { nil },
-        nativeAdStyle: AdMobNativeStyle = .default
+        nativeAdStyle: AdMobNativeStyle = .default,
+        nativeAdLayout: AdMobNativeLayout = .compactHorizontal
     ) {
         precondition(!priceTiers.isEmpty, "AdMobNetworkAdapter requires at least one price tier")
         self.priceTiers = priceTiers
         self.rootViewControllerProvider = rootViewController
         self.nativeAdStyle = nativeAdStyle
+        self.nativeAdLayout = nativeAdLayout
         super.init()
     }
 
@@ -99,7 +106,7 @@ public final class AdMobNetworkAdapter: NSObject, AdNetworkAdapter, @unchecked S
                 guard let nativeAd = try await loadNativeAd(adUnitId: adUnitId, request: request) else {
                     return nil
                 }
-                return await Self.makeCreative(from: nativeAd, style: nativeAdStyle)
+                return await Self.makeCreative(from: nativeAd, style: nativeAdStyle, layout: nativeAdLayout)
             }
         )
     }
@@ -166,7 +173,8 @@ public final class AdMobNetworkAdapter: NSObject, AdNetworkAdapter, @unchecked S
     @MainActor
     static func makeCreative(
         from nativeAd: GADNativeAd,
-        style: AdMobNativeStyle = .default
+        style: AdMobNativeStyle = .default,
+        layout: AdMobNativeLayout = .compactHorizontal
     ) -> GrowlAd? {
         // Always attach a renderer. AdMob counts impressions and clicks only
         // when the creative is displayed inside a `GADNativeAdView`;
@@ -178,7 +186,8 @@ public final class AdMobNetworkAdapter: NSObject, AdNetworkAdapter, @unchecked S
         let renderer = AdMobNativeAdRenderer(
             nativeAd: nativeAd,
             delegateBridge: delegateBridge,
-            style: style
+            style: style,
+            layout: layout
         )
         let ad = AdMobCreativeMapper.makeCreative(
             from: AdMobNativeAssets(
