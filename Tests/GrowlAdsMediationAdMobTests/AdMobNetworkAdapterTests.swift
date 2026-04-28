@@ -49,7 +49,7 @@ final class AdMobNetworkAdapterTests: XCTestCase {
         XCTAssertEqual(ad?.description, "Book tonight and save")
         XCTAssertEqual(ad?.imageUrl, "https://example.com/hero.png")
         #if canImport(UIKit)
-        XCTAssertNotNil(ad?.renderer)
+        XCTAssertEqual(ad?.requiresCustomRendering, true)
         #endif
     }
 

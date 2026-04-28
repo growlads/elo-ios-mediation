@@ -1,0 +1,32 @@
+{
+  "pins" : [
+    {
+      "identity" : "growl-ios-sdk",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/growlads/growl-ios-sdk.git",
+      "state" : {
+        "revision" : "2c6ca04d9503378146a84a05dbbcb7b98f253255",
+        "version" : "0.0.1"
+      }
+    },
+    {
+      "identity" : "swift-package-manager-google-mobile-ads",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/googleads/swift-package-manager-google-mobile-ads.git",
+      "state" : {
+        "revision" : "7778cc1ab037c10dbbe026959e51e616bd961be9",
+        "version" : "11.13.0"
+      }
+    },
+    {
+      "identity" : "swift-package-manager-google-user-messaging-platform",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/googleads/swift-package-manager-google-user-messaging-platform.git",
+      "state" : {
+        "revision" : "708a282840c2171ee63bd93b87afa49fe507d70e",
+        "version" : "2.7.0"
+      }
+    }
+  ],
+  "version" : 2
+}
