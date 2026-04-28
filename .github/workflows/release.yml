@@ -1,0 +1,46 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - '[0-9]+.[0-9]+.[0-9]+'
+      - '[0-9]+.[0-9]+.[0-9]+-*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Determine tag
+        id: tag
+        run: echo "tag=${GITHUB_REF##*/}" >> "$GITHUB_OUTPUT"
+
+      - name: Build (sanity)
+        run: |
+          xcodebuild build \
+            -scheme GrowlAdsMediation \
+            -destination 'platform=iOS Simulator,name=iPhone 16,OS=latest' \
+            -derivedDataPath .build/xcodebuild
+
+      - name: Test
+        run: |
+          xcodebuild test \
+            -scheme GrowlAdsMediation \
+            -destination 'platform=iOS Simulator,name=iPhone 16,OS=latest' \
+            -only-testing:GrowlAdsMediationAdMobTests \
+            -derivedDataPath .build/xcodebuild
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          gh release create "$RELEASE_TAG" \
+            --generate-notes \
+            --title "$RELEASE_TAG"
