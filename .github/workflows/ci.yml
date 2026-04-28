@@ -1,0 +1,41 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build-test:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Show Xcode + Swift versions
+        run: |
+          xcodebuild -version
+          swift --version
+
+      - name: Resolve dependencies
+        run: swift package resolve
+
+      - name: Build
+        run: |
+          xcodebuild build \
+            -scheme GrowlAdsMediation \
+            -destination 'platform=iOS Simulator,name=iPhone 16,OS=latest' \
+            -derivedDataPath .build/xcodebuild
+
+      - name: Test
+        run: |
+          xcodebuild test \
+            -scheme GrowlAdsMediation \
+            -destination 'platform=iOS Simulator,name=iPhone 16,OS=latest' \
+            -only-testing:GrowlAdsMediationAdMobTests \
+            -derivedDataPath .build/xcodebuild
+
+      - name: Print resolved versions
+        if: always()
+        run: |
+          if [ -f Package.resolved ]; then cat Package.resolved; fi
