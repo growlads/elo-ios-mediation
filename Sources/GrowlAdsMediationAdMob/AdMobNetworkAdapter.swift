@@ -95,6 +95,7 @@ public final class AdMobNetworkAdapter: NSObject, AdNetworkAdapter, @unchecked S
     }
 
     public func start() async throws {
+        print("[GrowlAdsMediationAdMob] starting adapter version=\(AdMobAdapter.version)")
         try await startGoogleMobileAds()
     }
 
