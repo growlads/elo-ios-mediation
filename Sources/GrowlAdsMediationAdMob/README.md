@@ -1,7 +1,7 @@
 # GrowlAdsMediationAdMob
 
-AdMob mediation adapter for the Growl iOS SDK. Wraps `GoogleMobileAds`
-11.x and exposes it through Growl's `AdNetworkAdapter` contract.
+AdMob mediation adapter for the Elo iOS SDK. Wraps `GoogleMobileAds`
+11.x and exposes it through Elo's `AdNetworkAdapter` contract.
 
 **Runtime version:** `AdMobAdapter.version` — currently `11.10.0.0`.
 (The runtime constant is added in a follow-up task. Until then, treat

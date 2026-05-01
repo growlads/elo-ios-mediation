@@ -1,10 +1,10 @@
-# Growl Mediation Adapter Author Guide
+# Elo Mediation Adapter Author Guide
 
-This guide describes the v1 contract for building a client-side mediation adapter for `GrowlIosSdk`.
+This guide describes the v1 contract for building a client-side mediation adapter for the Elo iOS SDK.
 
 ## Scope
 
-- Adapters participate in Growl's built-in parallel first-price auction.
+- Adapters participate in Elo's built-in parallel first-price auction.
 - The SDK chooses the mediator implementation internally. Publishers register adapters, but they do not swap in custom waterfall or hybrid mediators in v1.
 - v1 is native-format only. Format-specific adapters can be added later without changing the core auction contract.
 
@@ -33,8 +33,8 @@ Adapters that do not need explicit startup can rely on the default no-op impleme
 
 Every adapter receives the same `AdBidRequest`:
 
-- `messages` and `context` for Growl's contextual targeting surface.
-- `adUnitId` for the publisher's Growl placement.
+- `messages` and `context` for Elo's contextual targeting surface.
+- `adUnitId` for the publisher's Elo placement.
 - `consent` as a per-request privacy snapshot.
 - `timeout` as the adapter's budget within the overall auction.
 
