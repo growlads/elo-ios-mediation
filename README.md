@@ -1,10 +1,10 @@
-# Growl iOS Mediation Adapters
+# Elo iOS Mediation Adapters
 
-First-party mediation adapters for the [Growl iOS SDK](https://github.com/growlads/growl-ios-sdk).
+First-party mediation adapters for the [Elo iOS SDK](https://github.com/growlads/elo-ios-sdk).
 
 Each adapter wraps a third-party ad network SDK and conforms to the
 `AdNetworkAdapter` contract from `GrowlAds`. Adapters participate in
-Growl's parallel first-price auction.
+Elo's parallel first-price auction.
 
 ## Available adapters
 
@@ -14,18 +14,18 @@ Growl's parallel first-price auction.
 
 ## Integration
 
-Add this repo as a SwiftPM dependency alongside `growl-ios-sdk`:
+Add this repo as a SwiftPM dependency alongside `elo-ios-sdk`:
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/growlads/growl-ios-sdk", from: "0.0.1"),
+    .package(url: "https://github.com/growlads/elo-ios-sdk", from: "0.0.1"),
     .package(url: "https://github.com/growlads/elo-ios-mediation", from: "0.0.1"),
 ],
 targets: [
     .target(
         name: "MyApp",
         dependencies: [
-            .product(name: "GrowlAds", package: "growl-ios-sdk"),
+            .product(name: "GrowlAds", package: "elo-ios-sdk"),
             .product(name: "GrowlAdsMediationAdMob", package: "elo-ios-mediation"),
         ]
     ),
